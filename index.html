@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ping Pong — Simple HTML5 Game</title>
+  <style>
+    :root{--bg:#0f1724;--panel:#0b1220;--accent:#06b6d4;--muted:#94a3b8}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial}
+    body{display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,var(--bg),#071025);color:#fff}
+    .wrap{width:880px;max-width:96%;padding:16px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h1{font-size:18px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{background:var(--panel);border:1px solid rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer}
+    button.primary{background:var(--accent);color:#012; border:none}
+    canvas{display:block;width:100%;height:auto;border-radius:8px;background:#071022;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    .meta{display:flex;gap:12px;align-items:center;margin-top:8px;color:var(--muted);font-size:13px}
+    .hint{font-size:13px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Ping Pong — HTML5 Canvas Game</h1>
+      <div class="controls">
+        <button id="modeBtn">Mode: 1P (AI)</button>
+        <button id="restart">Restart</button>
+        <button class="primary" id="fullscreen">Fullscreen</button>
+      </div>
+    </header>
+
+    <canvas id="game" width="800" height="500"></canvas>
+
+    <div class="meta">
+      <div class="hint">Controls — Left paddle: W / S. Right paddle: ↑ / ↓ (when 2P). Space to pause.</div>
+      <div style="margin-left:auto">Score: <span id="score">0 - 0</span></div>
+    </div>
+  </div>
+
+  <script>
+    // Simple Ping Pong game (single-file). Save as index.html and open.
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width; const h = canvas.height;
+
+    // Game state
+    let mode = '1P'; // '1P' or '2P'
+    const modeBtn = document.getElementById('modeBtn');
+    const restartBtn = document.getElementById('restart');
+    const fsBtn = document.getElementById('fullscreen');
+    const scoreEl = document.getElementById('score');
+
+    let leftScore = 0, rightScore = 0;
+    let paused = false;
+
+    // Paddles and ball
+    const paddle = {w:12,h:90, speed:6};
+    const left = {x:20,y:(h-90)/2};
+    const right = {x:w-20-12,y:(h-90)/2};
+    const ball = {x:w/2,y:h/2,r:8,speed:6,velX:6,velY:3}
+
+    // Input
+    const keys = {};
+    window.addEventListener('keydown', e=>{keys[e.key.toLowerCase()]=true; if(e.code==='Space'){paused=!paused}});
+    window.addEventListener('keyup', e=>{keys[e.key.toLowerCase()]=false});
+
+    function resetBall(direction=1){
+      ball.x = w/2; ball.y = h/2; ball.speed = 6; ball.velX = direction * (4 + Math.random()*2);
+      ball.velY = (Math.random()*6 - 3);
+    }
+
+    function drawRoundedRect(x,y,width,height,radius){
+      ctx.beginPath(); ctx.moveTo(x+radius,y);
+      ctx.arcTo(x+width,y,x+width,y+height,radius);
+      ctx.arcTo(x+width,y+height,x,y+height,radius);
+      ctx.arcTo(x,y+height,x,y,radius);
+      ctx.arcTo(x,y,x+width,y,radius);
+      ctx.closePath(); ctx.fill();
+    }
+
+    function draw(){
+      // Background
+      ctx.clearRect(0,0,w,h);
+      ctx.fillStyle = '#071022'; ctx.fillRect(0,0,w,h);
+
+      // Center line
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for(let y=10;y<h;y+=24) ctx.fillRect(w/2-1,y,2,16);
+
+      // Paddles
+      ctx.fillStyle = '#dbeafe';
+      drawRoundedRect(left.x,left.y,paddle.w,paddle.h,6);
+      drawRoundedRect(right.x,right.y,paddle.w,paddle.h,6);
+
+      // Ball
+      ctx.beginPath(); ctx.fillStyle = '#06b6d4'; ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2); ctx.fill();
+
+      // Scores
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '28px system-ui'; ctx.textAlign='center';
+      ctx.fillText(leftScore, w*0.25, 50); ctx.fillText(rightScore, w*0.75, 50);
+
+      // Pause overlay
+      if(paused){ ctx.fillStyle='rgba(2,6,23,0.6)'; ctx.fillRect(0,0,w,h); ctx.fillStyle='#fff'; ctx.font='22px system-ui'; ctx.fillText('Paused — press Space to resume', w/2, h/2); }
+    }
+
+    function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+
+    function update(){
+      if(paused) return;
+
+      // Left paddle controls (W/S)
+      if(keys['w']) left.y -= paddle.speed;
+      if(keys['s']) left.y += paddle.speed;
+      left.y = clamp(left.y, 0, h-paddle.h);
+
+      // Right paddle controls (2P: ArrowUp/ArrowDown) or AI
+      if(mode === '2P'){
+        if(keys['arrowup']) right.y -= paddle.speed;
+        if(keys['arrowdown']) right.y += paddle.speed;
+        right.y = clamp(right.y,0,h-paddle.h);
+      } else {
+        // simple AI: follow ball with max speed
+        const target = ball.y - paddle.h/2;
+        if(right.y + paddle.h/2 < ball.y - 6) right.y += paddle.speed * 0.9;
+        else if(right.y + paddle.h/2 > ball.y + 6) right.y -= paddle.speed * 0.9;
+        right.y = clamp(right.y,0,h-paddle.h);
+      }
+
+      // Move ball
+      ball.x += ball.velX; ball.y += ball.velY;
+
+      // Top / bottom collision
+      if(ball.y - ball.r <= 0 || ball.y + ball.r >= h){ ball.velY *= -1 }
+
+      // Paddle collisions
+      function paddleCollide(p){
+        return ball.x - ball.r < p.x + paddle.w && ball.x + ball.r > p.x && ball.y + ball.r > p.y && ball.y - ball.r < p.y + paddle.h;
+      }
+      if(paddleCollide(left)){
+        // reflect and add some spin based on where it hit the paddle
+        const collidePoint = (ball.y - (left.y + paddle.h/2)) / (paddle.h/2);
+        const angle = collidePoint * (Math.PI/4);
+        const direction = 1; // to the right
+        ball.speed += 0.3;
+        ball.velX = direction * ball.speed * Math.cos(angle);
+        ball.velY = ball.speed * Math.sin(angle);
+        ball.x = left.x + paddle.w + ball.r + 0.5;
+      }
+      if(paddleCollide(right)){
+        const collidePoint = (ball.y - (right.y + paddle.h/2)) / (paddle.h/2);
+        const angle = collidePoint * (Math.PI/4);
+        const direction = -1; // to the left
+        ball.speed += 0.3;
+        ball.velX = direction * ball.speed * Math.cos(angle);
+        ball.velY = ball.speed * Math.sin(angle);
+        ball.x = right.x - ball.r - 0.5;
+      }
+
+      // Score
+      if(ball.x - ball.r <= 0){ rightScore++; resetBall(1) }
+      if(ball.x + ball.r >= w){ leftScore++; resetBall(-1) }
+
+      scoreEl.textContent = `${leftScore} - ${rightScore}`;
+    }
+
+    // Main loop
+    function loop(){ update(); draw(); requestAnimationFrame(loop); }
+    resetBall( (Math.random()>0.5)?1:-1 ); loop();
+
+    // UI
+    modeBtn.addEventListener('click', ()=>{
+      mode = (mode==='1P')? '2P' : '1P'; modeBtn.textContent = `Mode: ${mode}`;
+    });
+    restartBtn.addEventListener('click', ()=>{ leftScore=0; rightScore=0; resetBall((Math.random()>0.5)?1:-1); paused=false });
+    fsBtn.addEventListener('click', ()=>{ if(document.fullscreenElement) document.exitFullscreen(); else canvas.requestFullscreen(); });
+
+    // Resize canvas for crispness on high-DPI displays (keeps logical size)
+    function fixDPI(){ const dpr = window.devicePixelRatio || 1; canvas.width = 800 * dpr; canvas.height = 500 * dpr; canvas.style.width = '800px'; canvas.style.height = '500px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
+    fixDPI(); window.addEventListener('resize', ()=>{/* keep fixed layout */});
+
+    // Touch support: tap top/bottom left/right
+    let touchY = null;
+    canvas.addEventListener('touchstart', e=>{ e.preventDefault(); const t = e.touches[0]; const rect = canvas.getBoundingClientRect(); const x = t.clientX-rect.left; const y = t.clientY-rect.top; touchY = y; if(x < rect.width/2){ left.y = clamp(y - paddle.h/2,0,h-paddle.h) } else { right.y = clamp(y - paddle.h/2,0,h-paddle.h) } }, {passive:false});
+    canvas.addEventListener('touchmove', e=>{ e.preventDefault(); const t = e.touches[0]; const rect = canvas.getBoundingClientRect(); const x = t.clientX-rect.left; const y = t.clientY-rect.top; if(x < rect.width/2){ left.y = clamp(y - paddle.h/2,0,h-paddle.h) } else { right.y = clamp(y - paddle.h/2,0,h-paddle.h) } }, {passive:false});
+
+    // Helpful keyboard hints on load
+    console.log('Ping Pong loaded. Left: W/S. Right: ArrowUp/ArrowDown. Space to pause. Toggle mode with Mode button.');
+  </script>
+</body>
+</html>
